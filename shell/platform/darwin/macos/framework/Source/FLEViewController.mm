@@ -16,12 +16,6 @@ static NSString* const kICUBundlePath = @"icudtl.dat";
 
 static const int kDefaultWindowFramebuffer = 0;
 
-// Android KeyEvent constants from https://developer.android.com/reference/android/view/KeyEvent
-static const int kAndroidMetaStateShift = 1 << 0;
-static const int kAndroidMetaStateAlt = 1 << 1;
-static const int kAndroidMetaStateCtrl = 1 << 12;
-static const int kAndroidMetaStateMeta = 1 << 16;
-
 #pragma mark - Private interface declaration.
 
 /**
@@ -38,6 +32,14 @@ static const int kAndroidMetaStateMeta = 1 << 16;
  * The tracking area used to generate hover events, if enabled.
  */
 @property(nonatomic) NSTrackingArea* trackingArea;
+
+/**
+ * Whether or not a kAdd event has been sent for the mouse (or sent again since
+ * the last kRemove was sent if tracking is enabled). Used to determine whether
+ * to send an Add event before sending an incoming mouse event, since Flutter
+ * expects a pointers to be added before events are sent for them.
+ */
+@property(nonatomic) BOOL mouseCurrentlyAdded;
 
 /**
  * Updates |trackingArea| for the current tracking settings, creating it with
@@ -88,6 +90,21 @@ static const int kAndroidMetaStateMeta = 1 << 16;
  * Converts |event| to a key event channel message, and sends it to the engine.
  */
 - (void)dispatchKeyEvent:(NSEvent*)event ofType:(NSString*)type;
+
+/**
+ * Initializes the KVO for user settings and passes the initial user settings to the engine.
+ */
+- (void)sendInitialSettings;
+
+/**
+ * Responsds to updates in the user settings and passes this data to the engine.
+ */
+- (void)onSettingsChanged:(NSNotification*)notification;
+
+/**
+ * Handles messages received from the Flutter engine on the _*Channel channels.
+ */
+- (void)handleMethodCall:(FlutterMethodCall*)call result:(FlutterResult)result;
 
 @end
 
@@ -179,6 +196,12 @@ static bool HeadlessOnMakeResourceCurrent(FLEViewController* controller) {
   // A message channel for passing key events to the Flutter engine. This should be replaced with
   // an embedding API; see Issue #47.
   FlutterBasicMessageChannel* _keyEventChannel;
+
+  // A message channel for sending user settings to the flutter engine.
+  FlutterBasicMessageChannel* _settingsChannel;
+
+  // A method channel for miscellaneous platform functionality.
+  FlutterMethodChannel* _platformChannel;
 }
 
 @dynamic view;
@@ -189,6 +212,7 @@ static bool HeadlessOnMakeResourceCurrent(FLEViewController* controller) {
 static void CommonInit(FLEViewController* controller) {
   controller->_messageHandlers = [[NSMutableDictionary alloc] init];
   controller->_additionalKeyResponders = [[NSMutableOrderedSet alloc] init];
+  controller->_mouseTrackingMode = FlutterMouseTrackingModeInKeyWindow;
 }
 
 - (instancetype)initWithCoder:(NSCoder*)coder {
@@ -249,13 +273,6 @@ static void CommonInit(FLEViewController* controller) {
                              commandLineArguments:arguments];
 }
 
-- (id<FLEPluginRegistrar>)registrarForPlugin:(NSString*)pluginName {
-  // Currently, the view controller acts as the registrar for all plugins, so the
-  // name is ignored. It is part of the API to reduce churn in the future when
-  // aligning more closely with the Flutter registrar system.
-  return self;
-}
-
 #pragma mark - Framework-internal methods
 
 - (void)addKeyResponder:(NSResponder*)responder {
@@ -303,6 +320,18 @@ static void CommonInit(FLEViewController* controller) {
       [FlutterBasicMessageChannel messageChannelWithName:@"flutter/keyevent"
                                          binaryMessenger:self
                                                    codec:[FlutterJSONMessageCodec sharedInstance]];
+  _settingsChannel =
+      [FlutterBasicMessageChannel messageChannelWithName:@"flutter/settings"
+                                         binaryMessenger:self
+                                                   codec:[FlutterJSONMessageCodec sharedInstance]];
+  _platformChannel =
+      [FlutterMethodChannel methodChannelWithName:@"flutter/platform"
+                                  binaryMessenger:self
+                                            codec:[FlutterJSONMethodCodec sharedInstance]];
+  __weak FLEViewController* weakSelf = self;
+  [_platformChannel setMethodCallHandler:^(FlutterMethodCall* call, FlutterResult result) {
+    [weakSelf handleMethodCall:call result:result];
+  }];
 }
 
 - (BOOL)launchEngineInternalWithAssetsPath:(NSURL*)assets
@@ -350,6 +379,9 @@ static void CommonInit(FLEViewController* controller) {
     NSLog(@"Failed to start Flutter engine: error %d", result);
     return NO;
   }
+  // Send the initial user settings such as brightness and text scale factor
+  // to the engine.
+  [self sendInitialSettings];
   return YES;
 }
 
@@ -416,29 +448,96 @@ static void CommonInit(FLEViewController* controller) {
 }
 
 - (void)dispatchMouseEvent:(NSEvent*)event phase:(FlutterPointerPhase)phase {
+  // If a pointer added event hasn't been sent, synthesize one using this event for the basic
+  // information.
+  if (!_mouseCurrentlyAdded && phase != kAdd) {
+    // Only the values extracted for use in flutterEvent below matter, the rest are dummy values.
+    NSEvent* addEvent = [NSEvent enterExitEventWithType:NSEventTypeMouseEntered
+                                               location:event.locationInWindow
+                                          modifierFlags:0
+                                              timestamp:event.timestamp
+                                           windowNumber:event.windowNumber
+                                                context:nil
+                                            eventNumber:0
+                                         trackingNumber:0
+                                               userData:NULL];
+    [self dispatchMouseEvent:addEvent phase:kAdd];
+  }
+
   NSPoint locationInView = [self.view convertPoint:event.locationInWindow fromView:nil];
   NSPoint locationInBackingCoordinates = [self.view convertPointToBacking:locationInView];
-  const FlutterPointerEvent flutterEvent = {
+  FlutterPointerEvent flutterEvent = {
       .struct_size = sizeof(flutterEvent),
       .phase = phase,
       .x = locationInBackingCoordinates.x,
       .y = -locationInBackingCoordinates.y,  // convertPointToBacking makes this negative.
       .timestamp = static_cast<size_t>(event.timestamp * NSEC_PER_MSEC),
   };
+
+  if (event.type == NSEventTypeScrollWheel) {
+    flutterEvent.signal_kind = kFlutterPointerSignalKindScroll;
+
+    double pixelsPerLine = 1.0;
+    if (!event.hasPreciseScrollingDeltas) {
+      CGEventSourceRef source = CGEventCreateSourceFromEvent(event.CGEvent);
+      pixelsPerLine = CGEventSourceGetPixelsPerLine(source);
+      if (source) {
+        CFRelease(source);
+      }
+    }
+    double scaleFactor = self.view.layer.contentsScale;
+    flutterEvent.scroll_delta_x = -event.scrollingDeltaX * pixelsPerLine * scaleFactor;
+    flutterEvent.scroll_delta_y = -event.scrollingDeltaY * pixelsPerLine * scaleFactor;
+  }
   FlutterEngineSendPointerEvent(_engine, &flutterEvent, 1);
+
+  if (phase == kAdd) {
+    _mouseCurrentlyAdded = YES;
+  } else if (phase == kRemove) {
+    _mouseCurrentlyAdded = NO;
+  }
 }
 
 - (void)dispatchKeyEvent:(NSEvent*)event ofType:(NSString*)type {
   [_keyEventChannel sendMessage:@{
-    @"keymap" : @"android",
+    @"keymap" : @"macos",
     @"type" : type,
     @"keyCode" : @(event.keyCode),
-    @"metaState" :
-        @(((event.modifierFlags & NSEventModifierFlagShift) ? kAndroidMetaStateShift : 0) |
-          ((event.modifierFlags & NSEventModifierFlagOption) ? kAndroidMetaStateAlt : 0) |
-          ((event.modifierFlags & NSEventModifierFlagControl) ? kAndroidMetaStateCtrl : 0) |
-          ((event.modifierFlags & NSEventModifierFlagCommand) ? kAndroidMetaStateMeta : 0))
+    @"modifiers" : @(event.modifierFlags),
+    @"characters" : event.characters,
+    @"charactersIgnoringModifiers" : event.charactersIgnoringModifiers,
   }];
+}
+
+- (void)onSettingsChanged:(NSNotification*)notification {
+  // TODO(jonahwilliams): https://github.com/flutter/flutter/issues/32015.
+  NSString* brightness =
+      [[NSUserDefaults standardUserDefaults] stringForKey:@"AppleInterfaceStyle"];
+  [_settingsChannel sendMessage:@{
+    @"platformBrightness" : [brightness isEqualToString:@"Dark"] ? @"dark" : @"light",
+    // TODO(jonahwilliams): https://github.com/flutter/flutter/issues/32006.
+    @"textScaleFactor" : @1.0,
+    @"alwaysUse24HourFormat" : @false
+  }];
+}
+
+- (void)sendInitialSettings {
+  // TODO(jonahwilliams): https://github.com/flutter/flutter/issues/32015.
+  [[NSDistributedNotificationCenter defaultCenter]
+      addObserver:self
+         selector:@selector(onSettingsChanged:)
+             name:@"AppleInterfaceThemeChangedNotification"
+           object:nil];
+  [self onSettingsChanged:nil];
+}
+
+- (void)handleMethodCall:(FlutterMethodCall*)call result:(FlutterResult)result {
+  if ([call.method isEqualToString:@"SystemNavigator.pop"]) {
+    [NSApp terminate:self];
+    result(nil);
+  } else {
+    result(FlutterMethodNotImplemented);
+  }
 }
 
 #pragma mark - FLEReshapeListener
@@ -491,6 +590,14 @@ static void CommonInit(FLEViewController* controller) {
   }];
 }
 
+#pragma mark - FLEPluginRegistry
+
+- (id<FLEPluginRegistrar>)registrarForPlugin:(NSString*)pluginName {
+  // Currently, the view controller acts as the registrar for all plugins, so the
+  // name is ignored.
+  return self;
+}
+
 #pragma mark - NSResponder
 
 - (BOOL)acceptsFirstResponder {
@@ -536,6 +643,12 @@ static void CommonInit(FLEViewController* controller) {
 }
 
 - (void)mouseMoved:(NSEvent*)event {
+  [self dispatchMouseEvent:event phase:kHover];
+}
+
+- (void)scrollWheel:(NSEvent*)event {
+  // TODO: Add gesture-based (trackpad) scroll support once it's supported by the engine rather
+  // than always using kHover.
   [self dispatchMouseEvent:event phase:kHover];
 }
 

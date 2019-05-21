@@ -7,7 +7,7 @@
 #include "flutter/flow/paint_utils.h"
 #include "third_party/skia/include/utils/SkShadowUtils.h"
 
-namespace flow {
+namespace flutter {
 
 const SkScalar kLightHeight = 600;
 const SkScalar kLightRadius = 800;
@@ -43,8 +43,11 @@ void PhysicalShapeLayer::set_path(const SkPath& path) {
 
 void PhysicalShapeLayer::Preroll(PrerollContext* context,
                                  const SkMatrix& matrix) {
+  context->total_elevation += elevation_;
+  total_elevation_ = context->total_elevation;
   SkRect child_paint_bounds;
   PrerollChildren(context, matrix, &child_paint_bounds);
+  context->total_elevation -= elevation_;
 
   if (elevation_ == 0) {
     set_paint_bounds(path_.getBounds());
@@ -58,32 +61,42 @@ void PhysicalShapeLayer::Preroll(PrerollContext* context,
     // join the child paint bounds.
     // The offset is calculated as follows:
 
-    //                   .--                            (kLightRadius = 800)
-    //                 -----                            (light)
-    //                   |                              (kLightHeight = 600)
+    //                   .---                           (kLightRadius)
+    //                -------/                          (light)
+    //                   |  /
+    //                   | /
+    //                   |/
+    //                   |O
+    //                  /|                              (kLightHeight)
+    //                 / |
+    //                /  |
+    //               /   |
+    //              /    |
     //             -------------                        (layer)
-    //                   |
-    //                   |                              (elevation)
-    //                   |
+    //            /|     |
+    //           / |     |                              (elevation)
+    //        A /  |     |B
     // ------------------------------------------------ (canvas)
-    //  -----------                                     (extent of shadow)
+    //          ---                                     (extent of shadow)
     //
-    // E = lx        }           x = (r + w/2)/h
+    // E = lt        }           t = (r + w/2)/h
     //                } =>
-    // r + w/2 = hx  }           E = (l/h)(r + w/2)
+    // r + w/2 = ht  }           E = (l/h)(r + w/2)
     //
     // Where: E = extent of shadow
     //        l = elevation of layer
     //        r = radius of the light source
     //        w = width of the layer
     //        h = light height
-    //        x = multiplier for elevation to extent
+    //        t = tangent of AOB, i.e., multiplier for elevation to extent
     SkRect bounds(path_.getBounds());
-    double ex = (kLightRadius * device_pixel_ratio_ + bounds.width() * 0.5) /
+    // tangent for x
+    double tx = (kLightRadius * device_pixel_ratio_ + bounds.width() * 0.5) /
                 kLightHeight;
-    double ey = (kLightRadius * device_pixel_ratio_ + bounds.height() * 0.5) /
+    // tangent for y
+    double ty = (kLightRadius * device_pixel_ratio_ + bounds.height() * 0.5) /
                 kLightHeight;
-    bounds.outset(elevation_ * ex, elevation_ * ey);
+    bounds.outset(elevation_ * tx, elevation_ * ty);
     set_paint_bounds(bounds);
 #endif  // defined(OS_FUCHSIA)
   }
@@ -97,7 +110,7 @@ void PhysicalShapeLayer::UpdateScene(SceneUpdateContext& context) {
   // Retained rendering: speedup by reusing a retained entity node if possible.
   // When an entity node is reused, no paint layer is added to the frame so we
   // won't call PhysicalShapeLayer::Paint.
-  LayerRasterCacheKey key(this, context.Matrix());
+  LayerRasterCacheKey key(unique_id(), context.Matrix());
   if (context.HasRetainedNode(key)) {
     const scenic::EntityNode& retained_node = context.GetRetainedNode(key);
     FML_DCHECK(context.top_entity());
@@ -108,7 +121,7 @@ void PhysicalShapeLayer::UpdateScene(SceneUpdateContext& context) {
 
   // If we can't find an existing retained surface, create one.
   SceneUpdateContext::Frame frame(context, frameRRect_, color_, elevation_,
-                                  this);
+                                  total_elevation_, viewport_depth_, this);
   for (auto& layer : layers()) {
     if (layer->needs_painting()) {
       frame.AddPaintLayer(layer.get());
@@ -132,6 +145,7 @@ void PhysicalShapeLayer::Paint(PaintContext& context) const {
   // Call drawPath without clip if possible for better performance.
   SkPaint paint;
   paint.setColor(color_);
+  paint.setAntiAlias(true);
   if (clip_behavior_ != Clip::antiAliasWithSaveLayer) {
     context.leaf_nodes_canvas->drawPath(path_, paint);
   }
@@ -191,4 +205,4 @@ void PhysicalShapeLayer::DrawShadow(SkCanvas* canvas,
       dpr * kLightRadius, ambientColor, spotColor, flags);
 }
 
-}  // namespace flow
+}  // namespace flutter

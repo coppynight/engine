@@ -21,31 +21,31 @@ class FontWeight {
   final int index;
 
   /// Thin, the least thick
-  static const FontWeight w100 = const FontWeight._(0);
+  static const FontWeight w100 = FontWeight._(0);
 
   /// Extra-light
-  static const FontWeight w200 = const FontWeight._(1);
+  static const FontWeight w200 = FontWeight._(1);
 
   /// Light
-  static const FontWeight w300 = const FontWeight._(2);
+  static const FontWeight w300 = FontWeight._(2);
 
   /// Normal / regular / plain
-  static const FontWeight w400 = const FontWeight._(3);
+  static const FontWeight w400 = FontWeight._(3);
 
   /// Medium
-  static const FontWeight w500 = const FontWeight._(4);
+  static const FontWeight w500 = FontWeight._(4);
 
   /// Semi-bold
-  static const FontWeight w600 = const FontWeight._(5);
+  static const FontWeight w600 = FontWeight._(5);
 
   /// Bold
-  static const FontWeight w700 = const FontWeight._(6);
+  static const FontWeight w700 = FontWeight._(6);
 
   /// Extra-bold
-  static const FontWeight w800 = const FontWeight._(7);
+  static const FontWeight w800 = FontWeight._(7);
 
   /// Black, the most thick
-  static const FontWeight w900 = const FontWeight._(8);
+  static const FontWeight w900 = FontWeight._(8);
 
   /// The default font weight.
   static const FontWeight normal = w400;
@@ -54,7 +54,7 @@ class FontWeight {
   static const FontWeight bold = w700;
 
   /// A list of all the font weights.
-  static const List<FontWeight> values = const <FontWeight>[
+  static const List<FontWeight> values = <FontWeight>[
     w100, w200, w300, w400, w500, w600, w700, w800, w900
   ];
 
@@ -63,7 +63,8 @@ class FontWeight {
   /// Rather than using fractional weights, the interpolation rounds to the
   /// nearest weight.
   ///
-  /// Any null values for `a` or `b` are interpreted as equivalent to [normal]
+  /// If both `a` and `b` are null, then this method will return null. Otherwise,
+  /// any null values for `a` or `b` are interpreted as equivalent to [normal]
   /// (also known as [w400]).
   ///
   /// The `t` argument represents position on the timeline, with 0.0 meaning
@@ -80,6 +81,8 @@ class FontWeight {
   /// an [AnimationController].
   static FontWeight lerp(FontWeight a, FontWeight b, double t) {
     assert(t != null);
+    if (a == null && b == null)
+      return null;
     return values[lerpDouble(a?.index ?? normal.index, b?.index ?? normal.index, t).round().clamp(0, 8)];
   }
 
@@ -150,7 +153,7 @@ class TextDecoration {
     int mask = 0;
     for (TextDecoration decoration in decorations)
       mask |= decoration._mask;
-    return new TextDecoration._(mask);
+    return TextDecoration._(mask);
   }
 
   final int _mask;
@@ -161,16 +164,16 @@ class TextDecoration {
   }
 
   /// Do not draw a decoration
-  static const TextDecoration none = const TextDecoration._(0x0);
+  static const TextDecoration none = TextDecoration._(0x0);
 
   /// Draw a line underneath each line of text
-  static const TextDecoration underline = const TextDecoration._(0x1);
+  static const TextDecoration underline = TextDecoration._(0x1);
 
   /// Draw a line above each line of text
-  static const TextDecoration overline = const TextDecoration._(0x2);
+  static const TextDecoration overline = TextDecoration._(0x2);
 
   /// Draw a line through each line of text
-  static const TextDecoration lineThrough = const TextDecoration._(0x4);
+  static const TextDecoration lineThrough = TextDecoration._(0x4);
 
   @override
   bool operator ==(dynamic other) {
@@ -265,6 +268,7 @@ Int32List _encodeTextStyle(
   TextDecoration decoration,
   Color decorationColor,
   TextDecorationStyle decorationStyle,
+  double decorationThickness,
   FontWeight fontWeight,
   FontStyle fontStyle,
   TextBaseline textBaseline,
@@ -279,7 +283,7 @@ Int32List _encodeTextStyle(
   Paint foreground,
   List<Shadow> shadows
 ) {
-  final Int32List result = new Int32List(8);
+  final Int32List result = Int32List(8);
   if (color != null) {
     result[0] |= 1 << 1;
     result[1] = color.value;
@@ -308,46 +312,54 @@ Int32List _encodeTextStyle(
     result[0] |= 1 << 7;
     result[7] = textBaseline.index;
   }
-  if (fontFamily != null || (fontFamilyFallback != null && fontFamilyFallback.isNotEmpty)) {
+  if (decorationThickness != null) {
     result[0] |= 1 << 8;
-    // Passed separately to native.
   }
-  if (fontSize != null) {
+  if (fontFamily != null || (fontFamilyFallback != null && fontFamilyFallback.isNotEmpty)) {
     result[0] |= 1 << 9;
     // Passed separately to native.
   }
-  if (letterSpacing != null) {
+  if (fontSize != null) {
     result[0] |= 1 << 10;
     // Passed separately to native.
   }
-  if (wordSpacing != null) {
+  if (letterSpacing != null) {
     result[0] |= 1 << 11;
     // Passed separately to native.
   }
-  if (height != null) {
+  if (wordSpacing != null) {
     result[0] |= 1 << 12;
     // Passed separately to native.
   }
-  if (locale != null) {
+  if (height != null) {
     result[0] |= 1 << 13;
     // Passed separately to native.
   }
-  if (background != null) {
+  if (locale != null) {
     result[0] |= 1 << 14;
     // Passed separately to native.
   }
-  if (foreground != null) {
+  if (background != null) {
     result[0] |= 1 << 15;
     // Passed separately to native.
   }
-  if (shadows != null) {
+  if (foreground != null) {
     result[0] |= 1 << 16;
+    // Passed separately to native.
+  }
+  if (shadows != null) {
+    result[0] |= 1 << 17;
     // Passed separately to native.
   }
   return result;
 }
 
 /// An opaque object that determines the size, position, and rendering of text.
+///
+/// See also:
+///
+///  * [TextStyle](https://api.flutter.dev/flutter/painting/TextStyle-class.html), the class in the [painting] library.
+///
 class TextStyle {
   /// Creates a new TextStyle object.
   ///
@@ -355,6 +367,7 @@ class TextStyle {
   /// * `decoration`: The decorations to paint near the text (e.g., an underline).
   /// * `decorationColor`: The color in which to paint the text decorations.
   /// * `decorationStyle`: The style in which to paint the text decorations (e.g., dashed).
+  /// * `decorationThickness`: The thickness of the decoration as a muliplier on the thickness specified by the font.
   /// * `fontWeight`: The typeface thickness to use when painting the text (e.g., bold).
   /// * `fontStyle`: The typeface variant to use when drawing the letters (e.g., italics).
   /// * `fontFamily`: The name of the font to use when painting the text (e.g., Roboto). If a `fontFamilyFallback` is
@@ -370,7 +383,7 @@ class TextStyle {
   /// * `letterSpacing`: The amount of space (in logical pixels) to add between each letter.
   /// * `wordSpacing`: The amount of space (in logical pixels) to add at each sequence of white-space (i.e. between each word).
   /// * `textBaseline`: The common baseline that should be aligned between this text span and its parent text span, or, for the root text spans, with the line box.
-  /// * `height`: The height of this text span, as a multiple of the font size.
+  /// * `height`: The height of this text span, as a multiplier of the font size.
   /// * `locale`: The locale used to select region-specific glyphs.
   /// * `background`: The paint drawn as a background for the text.
   /// * `foreground`: The paint used to draw the text. If this is specified, `color` must be null.
@@ -379,6 +392,7 @@ class TextStyle {
     TextDecoration decoration,
     Color decorationColor,
     TextDecorationStyle decorationStyle,
+    double decorationThickness,
     FontWeight fontWeight,
     FontStyle fontStyle,
     TextBaseline textBaseline,
@@ -394,13 +408,14 @@ class TextStyle {
     List<Shadow> shadows,
   }) : assert(color == null || foreground == null,
          'Cannot provide both a color and a foreground\n'
-         'The color argument is just a shorthand for "foreground: new Paint()..color = color".'
+         'The color argument is just a shorthand for "foreground: Paint()..color = color".'
        ),
        _encoded = _encodeTextStyle(
          color,
          decoration,
          decorationColor,
          decorationStyle,
+         decorationThickness,
          fontWeight,
          fontStyle,
          textBaseline,
@@ -421,6 +436,7 @@ class TextStyle {
        _letterSpacing = letterSpacing,
        _wordSpacing = wordSpacing,
        _height = height,
+       _decorationThickness = decorationThickness,
        _locale = locale,
        _background = background,
        _foreground = foreground,
@@ -433,6 +449,7 @@ class TextStyle {
   final double _letterSpacing;
   final double _wordSpacing;
   final double _height;
+  final double _decorationThickness;
   final Locale _locale;
   final Paint _background;
   final Paint _foreground;
@@ -450,6 +467,7 @@ class TextStyle {
         _letterSpacing != typedOther._letterSpacing ||
         _wordSpacing != typedOther._wordSpacing ||
         _height != typedOther._height ||
+        _decorationThickness != typedOther._decorationThickness ||
         _locale != typedOther._locale ||
         _background != typedOther._background ||
         _foreground != typedOther._foreground)
@@ -466,31 +484,33 @@ class TextStyle {
   }
 
   @override
-  int get hashCode => hashValues(hashList(_encoded), _fontFamily, _fontFamilyFallback, _fontSize, _letterSpacing, _wordSpacing, _height, _locale, _background, _foreground, _shadows);
+  int get hashCode => hashValues(hashList(_encoded), _fontFamily, _fontFamilyFallback, _fontSize, _letterSpacing, _wordSpacing, _height, _locale, _background, _foreground, _shadows, _decorationThickness);
 
   @override
   String toString() {
     return 'TextStyle('
-             'color: ${             _encoded[0] & 0x00002 == 0x00002  ? new Color(_encoded[1])                  : "unspecified"}, '
-             'decoration: ${        _encoded[0] & 0x00004 == 0x00004  ? new TextDecoration._(_encoded[2])       : "unspecified"}, '
-             'decorationColor: ${   _encoded[0] & 0x00008 == 0x00008  ? new Color(_encoded[3])                  : "unspecified"}, '
-             'decorationStyle: ${   _encoded[0] & 0x00010 == 0x00010  ? TextDecorationStyle.values[_encoded[4]] : "unspecified"}, '
-             'fontWeight: ${        _encoded[0] & 0x00020 == 0x00020  ? FontWeight.values[_encoded[5]]          : "unspecified"}, '
-             'fontStyle: ${         _encoded[0] & 0x00040 == 0x00040  ? FontStyle.values[_encoded[6]]           : "unspecified"}, '
-             'textBaseline: ${      _encoded[0] & 0x00080 == 0x00080  ? TextBaseline.values[_encoded[7]]        : "unspecified"}, '
-             'fontFamily: ${        _encoded[0] & 0x00100 == 0x00100
-                                    && _fontFamily != null            ? _fontFamily                             : "unspecified"}, '
-             'fontFamilyFallback: ${_encoded[0] & 0x00100 == 0x00100
-                                    && _fontFamilyFallback != null
-                                    && _fontFamilyFallback.isNotEmpty ? _fontFamilyFallback                     : "unspecified"}, '
-             'fontSize: ${          _encoded[0] & 0x00200 == 0x00200  ? _fontSize                               : "unspecified"}, '
-             'letterSpacing: ${     _encoded[0] & 0x00400 == 0x00400  ? "${_letterSpacing}x"                    : "unspecified"}, '
-             'wordSpacing: ${       _encoded[0] & 0x00800 == 0x00800  ? "${_wordSpacing}x"                      : "unspecified"}, '
-             'height: ${            _encoded[0] & 0x01000 == 0x01000  ? "${_height}x"                           : "unspecified"}, '
-             'locale: ${            _encoded[0] & 0x02000 == 0x02000  ? _locale                                 : "unspecified"}, '
-             'background: ${        _encoded[0] & 0x04000 == 0x04000  ? _background                             : "unspecified"}, '
-             'foreground: ${        _encoded[0] & 0x08000 == 0x08000  ? _foreground                             : "unspecified"}, '
-             'shadows: ${           _encoded[0] & 0x10000 == 0x10000  ? _shadows                                : "unspecified"}'
+             'color: ${              _encoded[0] & 0x00002 == 0x00002  ? Color(_encoded[1])                  : "unspecified"}, '
+             'decoration: ${         _encoded[0] & 0x00004 == 0x00004  ? TextDecoration._(_encoded[2])       : "unspecified"}, '
+             'decorationColor: ${    _encoded[0] & 0x00008 == 0x00008  ? Color(_encoded[3])                  : "unspecified"}, '
+             'decorationStyle: ${    _encoded[0] & 0x00010 == 0x00010  ? TextDecorationStyle.values[_encoded[4]] : "unspecified"}, '
+             // The decorationThickness is not in encoded order in order to keep it near the other decoration properties.
+             'decorationThickness: ${_encoded[0] & 0x00100 == 0x00100  ? _decorationThickness                    : "unspecified"}, '
+             'fontWeight: ${         _encoded[0] & 0x00020 == 0x00020  ? FontWeight.values[_encoded[5]]          : "unspecified"}, '
+             'fontStyle: ${          _encoded[0] & 0x00040 == 0x00040  ? FontStyle.values[_encoded[6]]           : "unspecified"}, '
+             'textBaseline: ${       _encoded[0] & 0x00080 == 0x00080  ? TextBaseline.values[_encoded[7]]        : "unspecified"}, '
+             'fontFamily: ${         _encoded[0] & 0x00200 == 0x00200
+                                     && _fontFamily != null            ? _fontFamily                             : "unspecified"}, '
+             'fontFamilyFallback: ${ _encoded[0] & 0x00200 == 0x00200
+                                     && _fontFamilyFallback != null
+                                     && _fontFamilyFallback.isNotEmpty ? _fontFamilyFallback                     : "unspecified"}, '
+             'fontSize: ${           _encoded[0] & 0x00400 == 0x00400  ? _fontSize                               : "unspecified"}, '
+             'letterSpacing: ${      _encoded[0] & 0x00800 == 0x00800  ? "${_letterSpacing}x"                    : "unspecified"}, '
+             'wordSpacing: ${        _encoded[0] & 0x01000 == 0x01000  ? "${_wordSpacing}x"                      : "unspecified"}, '
+             'height: ${             _encoded[0] & 0x02000 == 0x02000  ? "${_height}x"                           : "unspecified"}, '
+             'locale: ${             _encoded[0] & 0x04000 == 0x04000  ? _locale                                 : "unspecified"}, '
+             'background: ${         _encoded[0] & 0x08000 == 0x08000  ? _background                             : "unspecified"}, '
+             'foreground: ${         _encoded[0] & 0x10000 == 0x10000  ? _foreground                             : "unspecified"}, '
+             'shadows: ${            _encoded[0] & 0x20000 == 0x20000  ? _shadows                                : "unspecified"}'
            ')';
   }
 }
@@ -527,7 +547,7 @@ Int32List _encodeParagraphStyle(
   String ellipsis,
   Locale locale,
 ) {
-  final Int32List result = new Int32List(6); // also update paragraph_builder.cc
+  final Int32List result = Int32List(6); // also update paragraph_builder.cc
   if (textAlign != null) {
     result[0] |= 1 << 1;
     result[1] = textAlign.index;
@@ -598,19 +618,15 @@ class ParagraphStyle {
   ///   dropped. The width constraints are those set in the
   ///   [ParagraphConstraints] object passed to the [Paragraph.layout] method.
   ///
-  /// * `fontFamily`: The name of the font to use when painting the text (e.g.,
-  ///   Roboto).
+  /// * `fontFamily`: The name of the font family to apply when painting the text,
+  ///   in the absence of a `textStyle` being attached to the span.
   ///
-  /// * `fontSize`: The size of glyphs (in logical pixels) to use when painting
-  ///   the text.
+  /// * `fontSize`: The fallback size of glyphs (in logical pixels) to
+  ///   use when painting the text. This is used when there is no [TextStyle].
   ///
-  /// * `height`: The minimum height of the line boxes, as a multiple of the
-  ///   font size. The lines of the paragraph will be at least
-  ///   `(height + leading) * fontSize` tall when fontSize
-  ///   is not null. When fontSize is null, there is no minimum line height. Tall
-  ///   glyphs due to baseline alignment or large [TextStyle.fontSize] may cause
-  ///   the actual line height after layout to be taller than specified here.
-  ///   [fontSize] must be provided for this property to take effect.
+  /// * `height`: The height of the spans as a multiplier of the font size. The
+  ///   fallback height to use when no height is provided in through
+  ///   [TextStyle.height].
   ///
   /// * `fontWeight`: The typeface thickness to use when painting the text
   ///   (e.g., bold).
@@ -698,7 +714,7 @@ class ParagraphStyle {
 
   @override
   String toString() {
-    return '$runtimeType('
+    return 'ParagraphStyle('
              'textAlign: ${     _encoded[0] & 0x002 == 0x002 ? TextAlign.values[_encoded[1]]     : "unspecified"}, '
              'textDirection: ${ _encoded[0] & 0x004 == 0x004 ? TextDirection.values[_encoded[2]] : "unspecified"}, '
              'fontWeight: ${    _encoded[0] & 0x008 == 0x008 ? FontWeight.values[_encoded[3]]    : "unspecified"}, '
@@ -784,6 +800,10 @@ ByteData _encodeStrut(
   return ByteData.view(data.buffer, 0,  byteCount);
 }
 
+/// See also:
+///
+///  * [StrutStyle](https://api.flutter.dev/flutter/painting/StrutStyle-class.html), the class in the [painting] library.
+///
 class StrutStyle {
   /// Creates a new StrutStyle object.
   ///
@@ -796,13 +816,13 @@ class StrutStyle {
   /// * `fontSize`: The size of glyphs (in logical pixels) to use when painting
   ///   the text.
   ///
-  /// * `lineHeight`: The minimum height of the line boxes, as a multiple of the
-  ///   font size. The lines of the paragraph will be at least
-  ///   `(lineHeight + leading) * fontSize` tall when fontSize
-  ///   is not null. When fontSize is null, there is no minimum line height. Tall
-  ///   glyphs due to baseline alignment or large [TextStyle.fontSize] may cause
-  ///   the actual line height after layout to be taller than specified here.
-  ///   [fontSize] must be provided for this property to take effect.
+  /// * `height`: The minimum height of the line boxes, as a multiplier of the
+  ///   font size. The lines of the paragraph will be at least `(height + leading)
+  ///   * fontSize` tall when fontSize is not null. When fontSize is null, there
+  ///   is no minimum line height. Tall glyphs due to baseline alignment or large
+  ///   [TextStyle.fontSize] may cause the actual line height after layout to be
+  ///   taller than specified here. [fontSize] must be provided for this property
+  ///   to take effect.
   ///
   /// * `leading`: The minimum amount of leading between lines as a multiple of
   ///   the font size. [fontSize] must be provided for this property to take effect.
@@ -814,11 +834,11 @@ class StrutStyle {
   ///   italics).
   ///
   /// * `forceStrutHeight`: When true, the paragraph will force all lines to be exactly
-  ///   `(lineHeight + leading) * fontSize` tall from baseline to baseline.
+  ///   `(height + leading) * fontSize` tall from baseline to baseline.
   ///   [TextStyle] is no longer able to influence the line height, and any tall
   ///   glyphs may overlap with lines above. If a [fontFamily] is specified, the
   ///   total ascent of the first line will be the min of the `Ascent + half-leading`
-  ///   of the [fontFamily] and `(lineHeight + leading) * fontSize`. Otherwise, it
+  ///   of the [fontFamily] and `(height + leading) * fontSize`. Otherwise, it
   ///   will be determined by the Ascent + half-leading of the first text.
   StrutStyle({
     String fontFamily,
@@ -1008,7 +1028,7 @@ class TextBox {
   final TextDirection direction;
 
   /// Returns a rect of the same size as this box.
-  Rect toRect() => new Rect.fromLTRB(left, top, right, bottom);
+  Rect toRect() => Rect.fromLTRB(left, top, right, bottom);
 
   /// The [left] edge of the box for left-to-right text; the [right] edge of the box for right-to-left text.
   ///
@@ -1119,7 +1139,7 @@ class TextPosition {
   /// The arguments must not be null (so the [offset] argument is required).
   const TextPosition({
     this.offset,
-    this.affinity: TextAffinity.downstream,
+    this.affinity = TextAffinity.downstream,
   }) : assert(offset != null),
        assert(affinity != null);
 
@@ -1154,7 +1174,7 @@ class TextPosition {
 
   @override
   String toString() {
-    return '$runtimeType(offset: $offset, affinity: $affinity)';
+    return 'TextPosition(offset: $offset, affinity: $affinity)';
   }
 }
 
@@ -1183,8 +1203,8 @@ class ParagraphConstraints {
   /// forced line break is placed after it (even if an explicit line break
   /// follows).
   ///
-  /// The width influences how ellipses are applied. See the discussion at [new
-  /// ParagraphStyle] for more details.
+  /// The width influences how ellipses are applied. See the discussion at
+  /// [new ParagraphStyle] for more details.
   ///
   /// This width is also used to position glyphs according to the [TextAlign]
   /// alignment described in the [ParagraphStyle] used when building the
@@ -1203,7 +1223,7 @@ class ParagraphConstraints {
   int get hashCode => width.hashCode;
 
   @override
-  String toString() => '$runtimeType(width: $width)';
+  String toString() => 'ParagraphConstraints(width: $width)';
 }
 
 /// Defines various ways to vertically bound the boxes returned by
@@ -1250,6 +1270,14 @@ enum BoxHeightStyle {
     ///
     /// {@macro flutter.dart:ui.boxHeightStyle.includeLineSpacing}
     includeLineSpacingBottom,
+
+    /// Calculate box heights based on the metrics of this paragraph's [StrutStyle].
+    ///
+    /// Boxes based on the strut will have consistent heights throughout the
+    /// entire paragraph.  The top edge of each line will align with the bottom
+    /// edge of the previous line.  It is possible for glyphs to extend outside
+    /// these boxes.
+    strut,
 }
 
 /// Defines various ways to horizontally bound the boxes returned by
@@ -1295,6 +1323,12 @@ class Paragraph extends NativeFieldWrapperClass2 {
   /// Valid only after [layout] has been called.
   double get height native 'Paragraph_height';
 
+  /// The distance from the left edge of the leftmost glyph to the right edge of
+  /// the rightmost glyph in the paragraph.
+  ///
+  /// Valid only after [layout] has been called.
+  double get longestLine native 'Paragraph_longestLine';
+
   /// The minimum width that this paragraph could be without failing to paint
   /// its contents within itself.
   ///
@@ -1320,8 +1354,8 @@ class Paragraph extends NativeFieldWrapperClass2 {
   /// null, `ellipsis` was not null, and one of the lines exceeded the width
   /// constraint.
   ///
-  /// See the discussion of the `maxLines` and `ellipsis` arguments at [new
-  /// ParagraphStyle].
+  /// See the discussion of the `maxLines` and `ellipsis` arguments at
+  /// [new ParagraphStyle].
   bool get didExceedMaxLines native 'Paragraph_didExceedMaxLines';
 
   /// Computes the size and position of each glyph in the paragraph.
@@ -1351,7 +1385,7 @@ class Paragraph extends NativeFieldWrapperClass2 {
   /// Returns the text position closest to the given offset.
   TextPosition getPositionForOffset(Offset offset) {
     final List<int> encoded = _getPositionForOffset(offset.dx, offset.dy);
-    return new TextPosition(offset: encoded[0], affinity: TextAffinity.values[encoded[1]]);
+    return TextPosition(offset: encoded[0], affinity: TextAffinity.values[encoded[1]]);
   }
   List<int> _getPositionForOffset(double dx, double dy) native 'Paragraph_getPositionForOffset';
 
@@ -1371,8 +1405,8 @@ class Paragraph extends NativeFieldWrapperClass2 {
 /// Builds a [Paragraph] containing text with the given styling information.
 ///
 /// To set the paragraph's alignment, truncation, and ellipsizing behavior, pass
-/// an appropriately-configured [ParagraphStyle] object to the [new
-/// ParagraphBuilder] constructor.
+/// an appropriately-configured [ParagraphStyle] object to the
+/// [new ParagraphBuilder] constructor.
 ///
 /// Then, call combinations of [pushStyle], [addText], and [pop] to add styled
 /// text to the object.
@@ -1384,7 +1418,7 @@ class Paragraph extends NativeFieldWrapperClass2 {
 /// paint it with [Canvas.drawParagraph].
 class ParagraphBuilder extends NativeFieldWrapperClass2 {
 
-  /// Creates a [ParagraphBuilder] object, which is used to create a
+  /// Creates a new [ParagraphBuilder] object, which is used to create a
   /// [Paragraph].
   @pragma('vm:entry-point')
   ParagraphBuilder(ParagraphStyle style) {
@@ -1396,9 +1430,28 @@ class ParagraphBuilder extends NativeFieldWrapperClass2 {
       if (style._strutStyle._fontFamilyFallback != null)
         strutFontFamilies.addAll(style._strutStyle._fontFamilyFallback);
     }
-    _constructor(style._encoded, style._strutStyle?._encoded, style._fontFamily, strutFontFamilies, style._fontSize, style._height, style._ellipsis, _encodeLocale(style._locale));
+    _constructor(
+      style._encoded,
+      style._strutStyle?._encoded,
+      style._fontFamily,
+      strutFontFamilies,
+      style._fontSize,
+      style._height,
+      style._ellipsis,
+      _encodeLocale(style._locale)
+    );
   }
-  void _constructor(Int32List encoded, ByteData strutData, String fontFamily, List<dynamic> strutFontFamily, double fontSize, double height, String ellipsis, String locale) native 'ParagraphBuilder_constructor';
+
+  void _constructor(
+    Int32List encoded,
+    ByteData strutData,
+    String fontFamily,
+    List<dynamic> strutFontFamily,
+    double fontSize,
+    double height,
+    String ellipsis,
+    String locale
+  ) native 'ParagraphBuilder_constructor';
 
   /// Applies the given style to the added text until [pop] is called.
   ///
@@ -1409,9 +1462,38 @@ class ParagraphBuilder extends NativeFieldWrapperClass2 {
       fullFontFamilies.add(style._fontFamily);
     if (style._fontFamilyFallback != null)
       fullFontFamilies.addAll(style._fontFamilyFallback);
-    _pushStyle(style._encoded, fullFontFamilies, style._fontSize, style._letterSpacing, style._wordSpacing, style._height, _encodeLocale(style._locale), style._background?._objects, style._background?._data, style._foreground?._objects, style._foreground?._data, Shadow._encodeShadows(style._shadows));
+    _pushStyle(
+      style._encoded,
+      fullFontFamilies,
+      style._fontSize,
+      style._letterSpacing,
+      style._wordSpacing,
+      style._height,
+      style._decorationThickness,
+      _encodeLocale(style._locale),
+      style._background?._objects,
+      style._background?._data,
+      style._foreground?._objects,
+      style._foreground?._data,
+      Shadow._encodeShadows(style._shadows)
+    );
   }
-  void _pushStyle(Int32List encoded, List<dynamic> fontFamilies, double fontSize, double letterSpacing, double wordSpacing, double height, String locale, List<dynamic> backgroundObjects, ByteData backgroundData, List<dynamic> foregroundObjects, ByteData foregroundData, ByteData shadowsData) native 'ParagraphBuilder_pushStyle';
+
+  void _pushStyle(
+    Int32List encoded,
+    List<dynamic> fontFamilies,
+    double fontSize,
+    double letterSpacing,
+    double wordSpacing,
+    double height,
+    double decorationThickness,
+    String locale,
+    List<dynamic> backgroundObjects,
+    ByteData backgroundData,
+    List<dynamic> foregroundObjects,
+    ByteData foregroundData,
+    ByteData shadowsData
+  ) native 'ParagraphBuilder_pushStyle';
 
   static String _encodeLocale(Locale locale) => locale?.toString() ?? '';
 
@@ -1429,7 +1511,7 @@ class ParagraphBuilder extends NativeFieldWrapperClass2 {
   void addText(String text) {
     final String error = _addText(text);
     if (error != null)
-      throw new ArgumentError(error);
+      throw ArgumentError(error);
   }
   String _addText(String text) native 'ParagraphBuilder_addText';
 
