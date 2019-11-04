@@ -28,18 +28,21 @@ class Window;
 
 class RuntimeController final : public WindowClient {
  public:
-  RuntimeController(RuntimeDelegate& client,
-                    DartVM* vm,
-                    fml::RefPtr<const DartSnapshot> isolate_snapshot,
-                    fml::RefPtr<const DartSnapshot> shared_snapshot,
-                    TaskRunners task_runners,
-                    fml::WeakPtr<SnapshotDelegate> snapshot_delegate,
-                    fml::WeakPtr<IOManager> io_manager,
-                    std::string advisory_script_uri,
-                    std::string advisory_script_entrypoint,
-                    std::function<void(int64_t)> idle_notification_callback,
-                    fml::closure isolate_create_callback,
-                    fml::closure isolate_shutdown_callback);
+  RuntimeController(
+      RuntimeDelegate& client,
+      DartVM* vm,
+      fml::RefPtr<const DartSnapshot> isolate_snapshot,
+      TaskRunners task_runners,
+      fml::WeakPtr<SnapshotDelegate> snapshot_delegate,
+      fml::WeakPtr<IOManager> io_manager,
+      fml::RefPtr<SkiaUnrefQueue> unref_queue,
+      fml::WeakPtr<ImageDecoder> image_decoder,
+      std::string advisory_script_uri,
+      std::string advisory_script_entrypoint,
+      std::function<void(int64_t)> idle_notification_callback,
+      fml::closure isolate_create_callback,
+      fml::closure isolate_shutdown_callback,
+      std::shared_ptr<const fml::Mapping> persistent_isolate_data);
 
   ~RuntimeController() override;
 
@@ -58,6 +61,8 @@ class RuntimeController final : public WindowClient {
   bool SetAccessibilityFeatures(int32_t flags);
 
   bool BeginFrame(fml::TimePoint frame_time);
+
+  bool ReportTimings(std::vector<int64_t> timings);
 
   bool NotifyIdle(int64_t deadline);
 
@@ -124,10 +129,11 @@ class RuntimeController final : public WindowClient {
   RuntimeDelegate& client_;
   DartVM* const vm_;
   fml::RefPtr<const DartSnapshot> isolate_snapshot_;
-  fml::RefPtr<const DartSnapshot> shared_snapshot_;
   TaskRunners task_runners_;
   fml::WeakPtr<SnapshotDelegate> snapshot_delegate_;
   fml::WeakPtr<IOManager> io_manager_;
+  fml::RefPtr<SkiaUnrefQueue> unref_queue_;
+  fml::WeakPtr<ImageDecoder> image_decoder_;
   std::string advisory_script_uri_;
   std::string advisory_script_entrypoint_;
   std::function<void(int64_t)> idle_notification_callback_;
@@ -136,20 +142,24 @@ class RuntimeController final : public WindowClient {
   std::pair<bool, uint32_t> root_isolate_return_code_ = {false, 0};
   const fml::closure isolate_create_callback_;
   const fml::closure isolate_shutdown_callback_;
+  std::shared_ptr<const fml::Mapping> persistent_isolate_data_;
 
-  RuntimeController(RuntimeDelegate& client,
-                    DartVM* vm,
-                    fml::RefPtr<const DartSnapshot> isolate_snapshot,
-                    fml::RefPtr<const DartSnapshot> shared_snapshot,
-                    TaskRunners task_runners,
-                    fml::WeakPtr<SnapshotDelegate> snapshot_delegate,
-                    fml::WeakPtr<IOManager> io_manager,
-                    std::string advisory_script_uri,
-                    std::string advisory_script_entrypoint,
-                    std::function<void(int64_t)> idle_notification_callback,
-                    WindowData data,
-                    fml::closure isolate_create_callback,
-                    fml::closure isolate_shutdown_callback);
+  RuntimeController(
+      RuntimeDelegate& client,
+      DartVM* vm,
+      fml::RefPtr<const DartSnapshot> isolate_snapshot,
+      TaskRunners task_runners,
+      fml::WeakPtr<SnapshotDelegate> snapshot_delegate,
+      fml::WeakPtr<IOManager> io_manager,
+      fml::RefPtr<SkiaUnrefQueue> unref_queue,
+      fml::WeakPtr<ImageDecoder> image_decoder,
+      std::string advisory_script_uri,
+      std::string advisory_script_entrypoint,
+      std::function<void(int64_t)> idle_notification_callback,
+      WindowData data,
+      fml::closure isolate_create_callback,
+      fml::closure isolate_shutdown_callback,
+      std::shared_ptr<const fml::Mapping> persistent_isolate_data);
 
   Window* GetWindowIfAvailable();
 
@@ -176,6 +186,12 @@ class RuntimeController final : public WindowClient {
   // |WindowClient|
   void UpdateIsolateDescription(const std::string isolate_name,
                                 int64_t isolate_port) override;
+
+  // |WindowClient|
+  void SetNeedsReportTimings(bool value) override;
+
+  // |WindowClient|
+  std::shared_ptr<const fml::Mapping> GetPersistentIsolateData() override;
 
   FML_DISALLOW_COPY_AND_ASSIGN(RuntimeController);
 };

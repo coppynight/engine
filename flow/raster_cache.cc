@@ -28,6 +28,7 @@ RasterCacheResult::RasterCacheResult(sk_sp<SkImage> image,
     : image_(std::move(image)), logical_rect_(logical_rect) {}
 
 void RasterCacheResult::draw(SkCanvas& canvas, const SkPaint* paint) const {
+  TRACE_EVENT0("flutter", "RasterCacheResult::draw");
   SkAutoCanvasRestore auto_restore(&canvas, true);
   SkIRect bounds =
       RasterCache::GetDeviceBounds(logical_rect_, canvas.getTotalMatrix());
@@ -262,7 +263,7 @@ void RasterCache::SetCheckboardCacheImages(bool checkerboard) {
 }
 
 void RasterCache::TraceStatsToTimeline() const {
-#if FLUTTER_RUNTIME_MODE != FLUTTER_RUNTIME_MODE_RELEASE
+#if !FLUTTER_RELEASE
 
   size_t layer_cache_count = 0;
   size_t layer_cache_bytes = 0;
@@ -289,7 +290,7 @@ void RasterCache::TraceStatsToTimeline() const {
                     "PictureMBytes", picture_cache_bytes * 1e-6  //
   );
 
-#endif  // FLUTTER_RUNTIME_MODE != FLUTTER_RUNTIME_MODE_RELEASE
+#endif  // !FLUTTER_RELEASE
 }
 
 }  // namespace flutter

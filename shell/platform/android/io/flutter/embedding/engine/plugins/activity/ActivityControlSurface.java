@@ -7,7 +7,11 @@ package io.flutter.embedding.engine.plugins.activity;
 import android.app.Activity;
 import android.arch.lifecycle.Lifecycle;
 import android.content.Intent;
+import android.os.Bundle;
 import android.support.annotation.NonNull;
+import android.support.annotation.Nullable;
+
+import io.flutter.plugin.platform.PlatformViewsController;
 
 /**
  * Control surface through which an {@link Activity} attaches to a {@link FlutterEngine}.
@@ -59,16 +63,6 @@ public interface ActivityControlSurface {
   void detachFromActivityForConfigChanges();
 
   /**
-   * Call this method from the {@link Activity} that was previously attached to this
-   * {@code ActivityControlSurface}'s {@link FlutterEngine}, and was just recreated after a
-   * configuration change.
-   * <p>
-   * This method gives each {@link ActivityAware} plugin an opportunity to re-establish necessary
-   * references to the given {@link Activity}.
-   */
-  void reattachToActivityAfterConfigChange(@NonNull Activity activity);
-
-  /**
    * Call this method from the {@link Activity} that is attached to this {@code ActivityControlSurfaces}'s
    * {@link FlutterEngine} when the {@link Activity} is about to be destroyed for non-configuration-change
    * reasons.
@@ -92,7 +86,7 @@ public interface ActivityControlSurface {
    * <p>
    * Returns true if one or more plugins utilized this {@link Activity} result.
    */
-  boolean onActivityResult(int requestCode, int resultCode, Intent data);
+  boolean onActivityResult(int requestCode, int resultCode, @Nullable Intent data);
 
   /**
    * Call this method from the {@link Activity} that is attached to this {@code ActivityControlSurface}'s
@@ -105,4 +99,19 @@ public interface ActivityControlSurface {
    * {@link FlutterEngine} and the associated method in the {@link Activity} is invoked.
    */
   void onUserLeaveHint();
+
+  /**
+   * Call this method from the {@link Activity} or {@code Fragment} that is attached to this
+   * {@code ActivityControlSurface}'s {@link FlutterEngine} when the associated method is invoked
+   * in the {@link Activity} or {@code Fragment}.
+   */
+  void onSaveInstanceState(@NonNull Bundle bundle);
+
+  /**
+   * Call this method from the {@link Activity} or {@code Fragment} that is attached to this
+   * {@code ActivityControlSurface}'s {@link FlutterEngine} when {@link Activity#onCreate(Bundle)}
+   * or {@code Fragment#onActivityCreated(Bundle)} is invoked in the {@link Activity} or
+   * {@code Fragment}.
+   */
+  void onRestoreInstanceState(@Nullable Bundle bundle);
 }

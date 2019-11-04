@@ -5,17 +5,26 @@
 #include "flutter/shell/platform/embedder/embedder_task_runner.h"
 
 #include "flutter/fml/message_loop_impl.h"
+#include "flutter/fml/message_loop_task_queues.h"
 
 namespace flutter {
 
-EmbedderTaskRunner::EmbedderTaskRunner(DispatchTable table)
+EmbedderTaskRunner::EmbedderTaskRunner(DispatchTable table,
+                                       size_t embedder_identifier)
     : TaskRunner(nullptr /* loop implemenation*/),
-      dispatch_table_(std::move(table)) {
+      embedder_identifier_(embedder_identifier),
+      dispatch_table_(std::move(table)),
+      placeholder_id_(
+          fml::MessageLoopTaskQueues::GetInstance()->CreateTaskQueue()) {
   FML_DCHECK(dispatch_table_.post_task_callback);
   FML_DCHECK(dispatch_table_.runs_task_on_current_thread_callback);
 }
 
 EmbedderTaskRunner::~EmbedderTaskRunner() = default;
+
+size_t EmbedderTaskRunner::GetEmbedderIdentifier() const {
+  return embedder_identifier_;
+}
 
 void EmbedderTaskRunner::PostTask(fml::closure task) {
   PostTaskForTime(task, fml::TimePoint::Now());
@@ -31,7 +40,7 @@ void EmbedderTaskRunner::PostTaskForTime(fml::closure task,
 
   {
     // Release the lock before the jump via the dispatch table.
-    std::lock_guard<std::mutex> lock(tasks_mutex_);
+    std::scoped_lock lock(tasks_mutex_);
     baton = ++last_baton_;
     pending_tasks_[baton] = task;
   }
@@ -52,7 +61,7 @@ bool EmbedderTaskRunner::PostTask(uint64_t baton) {
   fml::closure task;
 
   {
-    std::lock_guard<std::mutex> lock(tasks_mutex_);
+    std::scoped_lock lock(tasks_mutex_);
     auto found = pending_tasks_.find(baton);
     if (found == pending_tasks_.end()) {
       FML_LOG(ERROR) << "Embedder attempted to post an unknown task.";
@@ -67,6 +76,11 @@ bool EmbedderTaskRunner::PostTask(uint64_t baton) {
   FML_DCHECK(task);
   task();
   return true;
+}
+
+// |fml::TaskRunner|
+fml::TaskQueueId EmbedderTaskRunner::GetTaskQueueId() {
+  return placeholder_id_;
 }
 
 }  // namespace flutter
